@@ -2,6 +2,7 @@
 #include "stdio.h"
 #include "debug.h"
 #include "common.h"
+#include "compiler.h"
 
 VM vm; // 全局变量，用于数据共享
 
