@@ -17,7 +17,7 @@ typedef enum {
 typedef struct {
   int count;
   int capacity;
-  uint8_t *code; // code 指向一个数组才行，真的真的。
+  uint8_t *code; // code 指针数组
   ValueArray constants;
   int *lines;
 } Chunk;

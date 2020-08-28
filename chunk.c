@@ -20,7 +20,7 @@ void writeChunk(Chunk *chunk, uint8_t byte, int line) {
     chunk->lines = GROW_ARRAY(chunk->lines, int, oldCapacity, chunk->capacity);
   }
 
-  // 还是没看到为啥 code 是个数组数组数组呢？？
+  // 指针操作
   chunk->code[chunk->count] = byte; // 这就数组了？老数组了呀
   chunk->lines[chunk->count] = line;
   chunk->count++;

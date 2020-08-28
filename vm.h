@@ -8,7 +8,7 @@
 
 typedef struct {
   Chunk* chunk;
-  uint8_t* ip;
+  uint8_t* ip; // ip 指向当前正在执行的指令 
   Value stack[STACK_MAX];
   Value* stackTop;
 } VM;
