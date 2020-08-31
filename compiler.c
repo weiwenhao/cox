@@ -4,6 +4,10 @@
 #include "compiler.h"
 #include "scanner.h"
 
+#ifdef DEBUG_PRINT_CODE
+#include "debug.h"
+#endif
+
 typedef struct {
   Token current;
   Token previous;
@@ -74,7 +78,7 @@ static void advance() {
       parser.current = scanToken();
       if (parser.current.type != TOKEN_ERROR) break;
 
-      errorAtCurrent(parser.current.start)
+      errorAtCurrent(parser.current.start);
     }
 }
 
@@ -88,7 +92,7 @@ static void consume(TokenType type, const char* message) {
 }
 
 static void emitByte(uint8_t byte) {
-    writeChunk(currentChunk(), byte, parser.previous.line)
+    writeChunk(currentChunk(), byte, parser.previous.line);
 }
 
 static void emitBytes(uint8_t byte1, uint8_t byte2) {
@@ -116,6 +120,11 @@ static void emitConstant(Value value) {
 
 static void endCompiler() {
   emitReturn();
+#ifdef DEBUG_PRINT_CODE
+  if (!parser.hadError) {
+    disassembleChunk(currentChunk(), "code");
+  }
+#endif
 }
 // 预先声明
 static void expression();
@@ -148,7 +157,7 @@ static void grouping() {
 }
 
 static void number() {
-  double value = strtod(parser.previous.start, null);
+  double value = strtod(parser.previous.start, NULL);
   emitConstant(value);
 }
 
@@ -215,11 +224,11 @@ static void parsePrecedence(Precedence precedence) {
   // number 本身也是前缀表达式，因此这里肯定会有一个前缀会被解析
   ParseFn prefixRule = getRule(parser.previous.type)->prefix;
   if (prefixRule == NULL) {
-    error("Expect expression.")
+    error("Expect expression.");
     return;
   }
 
-  prefixRule(); // 低调用前缀表达式
+  prefixRule(); // 判断是否有前缀表达式
 
   while (precedence <= getRule(parser.current.type)->precedence)
   {
@@ -247,7 +256,7 @@ bool compile(const char* source, Chunk* chunk) {
 
   advance();
   expression();
-  consume(TOKEN_EOF, "Expect end of expression.") // 断言
+  consume(TOKEN_EOF, "Expect end of expression."); // 断言
 
   endCompiler();
 
