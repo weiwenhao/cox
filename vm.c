@@ -6,8 +6,9 @@
 
 VM vm; // 全局变量，用于数据共享
 
+static Value peek(int distance);
 static void resetStack() {
-  vm.stackTop = vm.stack; // 变量名是一个指针，指向数组的开始位置
+    vm.stackTop = vm.stack; // 变量名是一个指针，指向数组的开始位置
 }
 
 static InterpretResult run() {
@@ -20,38 +21,52 @@ static InterpretResult run() {
       push(a op b); \
     } while (false)
 
-  for (;;) {
+    for (;;) {
 #ifdef DEBUG_TRACE_EXECUTION
-    printf("          ");
-    for (Value* slot = vm.stack; slot < vm.stackTop; slot++) {
-      printf("[ ");
-      printValue(*slot);
-      printf(" ]");
-    }
-    printf("\n");
-    disassembleInstruction(vm.chunk, (int) (vm.ip - vm.chunk->code));
+        printf("          ");
+        for (Value *slot = vm.stack; slot < vm.stackTop; slot++) {
+            printf("[ ");
+            printValue(*slot);
+            printf(" ]");
+        }
+        printf("\n");
+        disassembleInstruction(vm.chunk, (int) (vm.ip - vm.chunk->code));
 #endif
-    uint8_t instruction;
-    switch (instruction = READ_BYTE()) {
-      case OP_CONSTANT: {
-        Value constant = READ_CONSTANT();
-        push(constant); // push 进去干啥？ 有啥用？
-        printValue(constant);
-        printf("\n");
-        break;
-      }
-      case OP_ADD: BINARY_OP(+); break;
-      case OP_SUBTRACT: BINARY_OP(-); break;
-      case OP_MULTIPLY: BINARY_OP(*); break;
-      case OP_DIVIDE: BINARY_OP(/); break;
-      case OP_NEGATE: push(-pop()); break;
-      case OP_RETURN: {
-        printValue(pop());
-        printf("\n");
-        return INTERPRET_OK;
-      }
+        uint8_t instruction;
+        switch (instruction = READ_BYTE()) {
+            case OP_CONSTANT: {
+                Value constant = READ_CONSTANT();
+                push(constant); // push 进去干啥？ 有啥用？
+                printValue(constant);
+                printf("\n");
+                break;
+            }
+            case OP_ADD:
+                BINARY_OP(+);
+                break;
+            case OP_SUBTRACT:
+                BINARY_OP(-);
+                break;
+            case OP_MULTIPLY:
+                BINARY_OP(*);
+                break;
+            case OP_DIVIDE:
+                BINARY_OP(/);
+                break;
+            case OP_NEGATE:
+                if (!IS_NUMBER(peek(0))) {
+                    runtimeError("Operand must be a number.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                push(NUMBER_VAL(-AS_NUMBER(pop())));
+                break;
+            case OP_RETURN: {
+                printValue(pop());
+                printf("\n");
+                return INTERPRET_OK;
+            }
+        }
     }
-  }
 
 #undef READ_BYTE
 #undef READ_CONSTANT
@@ -60,37 +75,41 @@ static InterpretResult run() {
 
 
 void initVM() {
-  resetStack();
+    resetStack();
 }
 
 void freeVM() {
 }
 
 void push(Value value) {
-  *vm.stackTop = value;
-  vm.stackTop++;
+    *vm.stackTop = value;
+    vm.stackTop++;
 }
 
 Value pop() {
-  vm.stackTop--;
-  return *vm.stackTop;
+    vm.stackTop--;
+    return *vm.stackTop;
+}
+
+static Value peek(int distance) {
+    return vm.stackTop[-1 - distance];
 }
 
 InterpretResult interpret(const char *source) {
-  Chunk chunk;
-  initChunk(&chunk);
+    Chunk chunk;
+    initChunk(&chunk);
 
-  if (!compile(source, &chunk)) {
+    if (!compile(source, &chunk)) {
+        freeChunk(&chunk);
+        return INTERPRET_COMPILE_ERROR;
+    }
+
+    vm.chunk = &chunk;
+    vm.ip = vm.chunk->code;
+
+    InterpretResult result = run();
     freeChunk(&chunk);
-    return INTERPRET_COMPILE_ERROR;
-  }
 
-  vm.chunk = &chunk;
-  vm.ip = vm.chunk->code;
-
-  InterpretResult result = run();
-  freeChunk(&chunk);
-
-  return result;
+    return result;
 }
 

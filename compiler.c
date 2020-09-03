@@ -157,8 +157,9 @@ static void grouping() {
 }
 
 static void number() {
+    // 字符串转 double
   double value = strtod(parser.previous.start, NULL);
-  emitConstant(value);
+  emitConstant(NUMBER_VAL(value));
 }
 
 static void unary() {

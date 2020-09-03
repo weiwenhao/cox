@@ -17,6 +17,12 @@ typedef struct {
     } as;
 } Value;
 
+// 宏看起来像是一个微型函数, 有了下面的 8 个宏,就可以愉快的在 c 静态世界和 cox 动态世界之间穿梭
+// #define 宏名称( [形参列表] ) 替换文本
+#define IS_BOOL(value)    ((value).type == VAL_BOOL)
+#define IS_NIL(value)     ((value).type == VAL_NIL)
+#define IS_NUMBER(value)  ((value).type == VAL_NUMBER)
+
 #define AS_BOOL(value)    ((value).as.boolean)
 #define AS_NUMBER(value)  ((value).as.number)
 
