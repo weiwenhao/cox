@@ -8,6 +8,7 @@
 VM vm; // 全局变量，用于数据共享
 
 static Value peek(int distance);
+static bool isFalsey(Value value);
 
 static void resetStack() {
     vm.stackTop = vm.stack; // 变量名是一个指针，指向数组的开始位置
@@ -82,6 +83,9 @@ static InterpretResult run() {
             case OP_DIVIDE:
                 BINARY_OP(NUMBER_VAL, /);
                 break;
+            case OP_NOT:
+                push(BOOL_VAL(isFalsey(pop())));
+                break;
             case OP_NEGATE:
                 if (!IS_NUMBER(peek(0))) {
                     runtimeError("Operand must be a number.");
@@ -123,6 +127,11 @@ Value pop() {
 // 返回栈中的元素,但不弹出栈
 static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
+}
+
+// 只有 nil 和 false 为 false,其余值都为 true
+static bool isFalsey(Value value) {
+    return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
 InterpretResult interpret(const char *source) {
