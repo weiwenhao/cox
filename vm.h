@@ -8,9 +8,10 @@
 
 typedef struct {
   Chunk* chunk;
-  uint8_t* ip; // ip 指向当前正在执行的指令 
+  uint8_t* ip;  // ip 指向当前正在执行的指令
   Value stack[STACK_MAX];
   Value* stackTop;
+  Obj* objects;  // 垃圾回收的起点
 } VM;
 
 typedef enum {
@@ -19,10 +20,12 @@ typedef enum {
   INTERPRET_RUNTIME_ERROR,
 } InterpretResult;
 
+extern VM vm;
+
 void initVM();
 void freeVM();
-InterpretResult interpret(const char *source);
+InterpretResult interpret(const char* source);
 void push(Value value);
 Value pop();
 
-#endif //COX__VM_H_
+#endif  // COX__VM_H_
