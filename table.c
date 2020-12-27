@@ -9,27 +9,37 @@
 
 #define TABLE_MAX_LOAD 0.75
 
-void initTable(Table* table) {
+void initTable(Table *table) {
   table->count = 0;
   table->capacity = 0;
   table->entries = NULL;
 }
 
-void freeTable(Table* table) {
+void freeTable(Table *table) {
   FREE_ARRAY(Entry, table->entries, table->capacity);
   initTable(table);
 }
 
-static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
+static Entry *findEntry(Entry *entries, int capacity, ObjString *key) {
   // key->hash 为已经计算并缓存好的分布均匀的 hash 值，不需要重复计算。
   // 通过 hash 值 % capacity 使其分布到具体的位置。
   uint32_t index = key->hash % capacity;
+
+  Entry *tombstone = NULL;
+
   for (;;) { // 负载系数使得死循环的情况不会发生。
-    Entry* entry = &entries[index];
-    // 如果对应的桶的 key 和寻找的 key 一致则返回
-    // 如果 entry->key == key 表示 key 存储在桶中，可以返回
-    // 如果 entry->key == NULL 表示这是一个空桶，找到空桶表示该 key 并没有存储在桶中
-    if (entry->key == key || entry->key == NULL) { 
+    Entry *entry = &entries[index];
+    // 可能是被删除的值或者是压根就没有存过值在这里
+    if (entry->key == NULL) {
+      if (IS_NIL(entry->value)) {
+        // 当找到一个真正空的 entry 时,此时可以确实 table 中不存在我想找到的 hash 值
+        // 那么可以推断出外界可以插入，此时如果查找到真空 entry 之前遇到过墓碑节点
+        // 则把墓碑节点返回给外界使用
+        return tombstone != NULL ? tombstone : entry;
+      } else {
+        if (tombstone == NULL) tombstone = entry; // 找到墓碑并不停止
+      }
+    } else if (entry->key == key) {
       return entry;
     }
 
@@ -38,25 +48,50 @@ static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
   }
 }
 
+// value 相当于多类型值返回？
+bool tableGet(Table *table, ObjString *key, Value *value) {
+  if (table->count == 0) return false;
+
+  Entry *entry = findEntry(table->entries, table->capacity, key);
+  if (entry->key == NULL) return false;
+
+  *value = entry->value;
+  return true;
+}
+
 // 需要注意 hash 表调整大小时，如果原来的 hash 表中存在 key， 则原来的 key->hash % capacity 会发生变化，导致结果不准确。
-static void adjustCapacity(Table* table, int capacity){
-  Entry* entries = ALLOCATE(Entry, capacity); 
+static void adjustCapacity(Table *table, int capacity) {
+  Entry *entries = ALLOCATE(Entry, capacity);
   for (int i = 0; i < capacity; i++) {
     entries[i].key = NULL;
     entries[i].value = NIL_VAL;
   }
 
-  table->entries = entries; // 这不就覆盖了？？？
+  for (int i = 0; i < table->capacity; i++) {
+    Entry *entry = &table->entries[i];
+    if (entry->key == NULL) {
+      continue;
+    }
+
+    // 重新分配
+    Entry *dest = findEntry(entries, capacity, entry->key);
+    dest->key = entry->key;
+    dest->value = entry->value;
+  }
+
+  FREE_ARRAY(Entry, table->entries, table->capacity);
+  table->entries = entries;
   table->capacity = capacity;
 }
 
-bool tableSet(Table* table, ObjString* key, Value value) {
+// 像 hash 表添加元素
+bool tableSet(Table *table, ObjString *key, Value value) {
   if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
     int capacity = GROW_CAPACITY(table->capacity);
     adjustCapacity(table, capacity);
   }
 
-  Entry* entry = findEntry(table->entries, table->capacity, key);
+  Entry *entry = findEntry(table->entries, table->capacity, key);
 
   bool isNewKey = entry->key == NULL;
   if (isNewKey) table->count++;
@@ -64,4 +99,25 @@ bool tableSet(Table* table, ObjString* key, Value value) {
   entry->key = key;
   entry->value = value;
   return isNewKey;
+}
+
+bool tableDelete(Table *table, ObjString *key) {
+  if (table->count == 0) return false;
+
+  Entry *entry = findEntry(table->entries, table->capacity, key);
+  if (entry->key == NULL) return false;
+
+  entry->key = NULL;
+  entry->value = BOOL_VAL(true);
+
+  return true;
+}
+
+void tableAddAll(Table *from, Table *to) {
+  for (int i = 0; i < from->capacity; i++) {
+    Entry *entry = &from->entries[i];
+    if (entry->key != NULL) {
+      tableSet(to, entry->key, entry->value);
+    }
+  }
 }
