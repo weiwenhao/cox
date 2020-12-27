@@ -28,6 +28,7 @@ static ObjString* allocateString(char* chars, int length, uint32_t hash) {
 }
 
 // fnv-la hash
+// length 表示需要计算 hash 的字符串的长度, hash 值会被均匀的分布在一个很大的数字范围内
 static uint32_t hashString(const char* key, int length) {
   // 最后的 u 是什么意思
   uint32_t hash = 2166136261u;
