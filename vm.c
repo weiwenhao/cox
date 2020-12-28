@@ -136,9 +136,13 @@ static InterpretResult run() {
 void initVM() {
   resetStack();
   vm.objects = NULL;
+  initTable(&vm.strings);
 }
 
-void freeVM() { freeObjects(); }
+void freeVM() {
+  freeTable(&vm.strings);
+  freeObjects();
+}
 
 void push(Value value) {
   *vm.stackTop = value;
@@ -171,7 +175,6 @@ static void concatenate() {
   ObjString* result = takeString(chars, length);
   push(OBJ_VAL(result));
 }
-
 
 InterpretResult interpret(const char* source) {
   Chunk chunk;

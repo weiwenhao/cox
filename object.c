@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "memory.h"
+#include "table.h"
 #include "value.h"
 #include "vm.h"
 
@@ -18,17 +19,22 @@ static Obj* allocateObject(size_t size, ObjType type) {
   return object;
 }
 
+// 所有分配的字符串都需要在 hash 表中存储一份从而避免重复创建
 static ObjString* allocateString(char* chars, int length, uint32_t hash) {
   ObjString* string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
   string->length = length;
   string->chars = chars;
   string->hash = hash;
 
+  // string 为 key, value 为 nil
+  tableSet(&vm.strings, string, NIL_VAL);
+
   return string;
 }
 
 // fnv-la hash
-// length 表示需要计算 hash 的字符串的长度, hash 值会被均匀的分布在一个很大的数字范围内
+// length 表示需要计算 hash 的字符串的长度, hash
+// 值会被均匀的分布在一个很大的数字范围内
 static uint32_t hashString(const char* key, int length) {
   // 最后的 u 是什么意思
   uint32_t hash = 2166136261u;
@@ -49,6 +55,13 @@ ObjString* takeString(char* chars, int length) {
 ObjString* copyString(const char* chars, int length) {
   // 计算 hash 值并缓存
   uint32_t hash = hashString(chars, length);
+
+  // 这里不能直接调用 tableGet 因为其调用的 findEntry 中使用了 == 进行 key 的比较
+  ObjString* interned = tableFindString(&vm.strings, chars, length, hash);
+  if (interned != NULL) {
+    FREE_ARRAY(char, chars, length + 1);
+    return interned;
+  }
 
   char* heapChars = ALLOCATE(char, length + 1);
   memcpy(heapChars, chars, length);

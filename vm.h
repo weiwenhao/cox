@@ -2,6 +2,7 @@
 #define COX__VM_H_
 
 #include "chunk.h"
+#include "table.h"
 #include "value.h"
 
 #define STACK_MAX 256
@@ -11,7 +12,8 @@ typedef struct {
   uint8_t* ip;  // ip 指向当前正在执行的指令
   Value stack[STACK_MAX];
   Value* stackTop;
-  Obj* objects;  // 垃圾回收的起点
+  Table strings;  // 存储所有的字符串表
+  Obj* objects;   // 垃圾回收的起点
 } VM;
 
 typedef enum {

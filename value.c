@@ -58,12 +58,16 @@ bool valuesEqual(Value a, Value b) {
       return true;
     case VAL_NUMBER:
       return AS_NUMBER(a) == AS_NUMBER(b);
-    case VAL_OBJ: {
-      ObjString* aString = AS_STRING(a);
-      ObjString* bString = AS_STRING(b);
-      return aString->length == bString->length &&
-             memcmp(aString->chars, bString->chars, aString->length) == 0;
-    }
+    // case VAL_OBJ: {
+    //   ObjString* aString = AS_STRING(a);
+    //   ObjString* bString = AS_STRING(b);
+    //   return aString->length == bString->length &&
+    //          memcmp(aString->chars, bString->chars, aString->length) == 0;}
+    case VAL_OBJ:
+      // 经过 string interning
+      // 技术，所有的字符串的处理，所有字符串对象的内存地址已经相同，所以可以直接使用
+      // == 进行比较
+      return AS_OBJ(a) == AS_OBJ(b);
     default:
       return false;
   }
