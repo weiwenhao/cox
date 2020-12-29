@@ -77,6 +77,9 @@ static InterpretResult run() {
       case OP_FALSE:
         push(BOOL_VAL(false));
         break;
+      case OP_POP:
+        pop();
+        break;
       case OP_EQUAL: {
         Value b = pop();
         Value a = pop();
@@ -120,9 +123,17 @@ static InterpretResult run() {
         }
         push(NUMBER_VAL(-AS_NUMBER(pop())));
         break;
-      case OP_RETURN: {
+      case OP_PRINT: {
+        // when the interpreter reaches this instruction, it has already
+        // executed the code for the expression leaving the result value on top
+        // of the stack
         printValue(pop());
         printf("\n");
+        break;
+      }
+      case OP_RETURN: {
+        // printValue(pop());
+        // printf("\n");
         return INTERPRET_OK;
       }
     }
