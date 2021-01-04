@@ -8,12 +8,13 @@
 #define STACK_MAX 256
 
 typedef struct {
-  Chunk* chunk;
-  uint8_t* ip;  // ip 指向当前正在执行的指令
+  Chunk *chunk;
+  uint8_t *ip;  // ip 指向当前正在执行的指令
   Value stack[STACK_MAX];
-  Value* stackTop;
+  Value *stackTop; // 支持，恒定指向栈顶
+  Table globals;
   Table strings;  // 存储所有的字符串表
-  Obj* objects;   // 垃圾回收的起点
+  Obj *objects;   // 垃圾回收的起点
 } VM;
 
 typedef enum {
@@ -26,7 +27,7 @@ extern VM vm;
 
 void initVM();
 void freeVM();
-InterpretResult interpret(const char* source);
+InterpretResult interpret(const char *source);
 void push(Value value);
 Value pop();
 
