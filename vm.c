@@ -81,12 +81,25 @@ static InterpretResult run() {
         break;
       case OP_POP:pop();
         break;
+      case OP_GET_GLOBAL: {
+        ObjString *name = READ_STRING();
+        Value value;
+        if (!tableGet(&vm.globals, name, &value)) {
+          runtimeError("Undefined variable '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        push(value);
+        break;
+      }
       case OP_DEFINE_GLOBAL: {
         // 为什么可以直接读出来常量名称？最顶部的就是常量名称？
         // 常量名称现在是数字还是 index 索引？？
         // ？？？
         ObjString *name = READ_STRING();
         // peek 和 pop 的唯一差别就是，peek 不弹出值
+        // 指令以及名称被读取后，剩下的则是变量的 value
+        // 此处 peek 获取的是变量的值！！！
+        // 并将变量的值放在 hash 表中
         tableSet(&vm.globals, name, peek(0));
         pop();
         break;
@@ -179,7 +192,8 @@ static Value peek(int distance) {
   // 等价于访问数组中的元素, vm.stackTop 是一个动态支持，默认指向数组的最后一个元素，所以可以使用 -1 作为下标
   // 直接使用数组名称访问时，数组名称为常量，默认执行数组的第 0 个元素。
   // 如果直接使用数组名[-1] 则会造成数组越界问题
-  return vm.stackTop[-1 - distance];
+  Value value = vm.stackTop[-1 - distance];
+  return value;
 }
 
 // 只有 nil 和 false 为 false,其余值都为 true

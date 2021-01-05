@@ -112,7 +112,7 @@ bool tableSet(Table *table, ObjString *key, Value value) {
   bool isNewKey = entry->key == NULL;
   if (isNewKey && IS_NIL(entry->value))
     table->count++;  // 墓碑也被 count 计数了，
-                     // 所以当存在很多墓碑时可能会过早的增加 table
+  // 所以当存在很多墓碑时可能会过早的增加 table
 
   entry->key = key;
   entry->value = value;
@@ -152,7 +152,8 @@ ObjString *tableFindString(Table *table, const char *chars, int length,
     if (entry->key == NULL) {
       if (IS_NIL(entry->value)) return NULL;
     } else if (entry->key->length == length && entry->key->hash == hash &&
-               memcmp(entry->key->chars, chars, length)) {
+        memcmp(entry->key->chars, chars, length) == 0) {
+      // memcmp 比较内存的前 n 个字节， 若两个字符串完全相同则返回 0，否则返回最后一个不为0的字符吃 ascii 码差值。
       return entry->key;
     }
 

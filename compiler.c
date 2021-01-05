@@ -44,6 +44,8 @@ Parser parser;
 
 Chunk *compilingChunk;
 
+static uint8_t identifierConstant(Token *name);
+
 static Chunk *currentChunk() { return compilingChunk; }
 
 static void errorAt(Token *token, const char *message) {
@@ -204,6 +206,16 @@ static void string() {
                    copyString(parser.previous.start + 1, parser.previous.length - 2)));
 }
 
+static void namedVariable(Token name) {
+  // 所有的变量名称在底层应该具有相同的地址，这样可以方便比较，和 hash 表查找
+  uint8_t arg = identifierConstant(&name);
+  emitBytes(OP_GET_GLOBAL, arg);
+}
+
+static void variable() {
+  namedVariable(parser.previous);
+}
+
 static void unary() {
   TokenType operatorType = parser.previous.type;
 
@@ -241,7 +253,7 @@ ParseRule rules[] = {
     [TOKEN_GREATER_EQUAL] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_LESS] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_LESS_EQUAL] = {NULL, binary, PREC_COMPARISON},
-    [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_IDENTIFIER] = {variable, NULL, PREC_NONE},
     [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
     [TOKEN_AND] = {NULL, NULL, PREC_NONE},
