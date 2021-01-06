@@ -32,7 +32,7 @@ typedef enum {
   PREC_PRIMARY
 } Precedence;
 
-typedef void (*ParseFn)();
+typedef void (*ParseFn)(bool canAssign);
 
 typedef struct {
   ParseFn prefix;
@@ -143,7 +143,7 @@ static ParseRule *getRule(TokenType type);
 
 static void parsePrecedence(Precedence precedence);
 
-static void binary() {
+static void binary(bool canAssign) {
   // Remember the operator.
   TokenType operatorType = parser.previous.type;
 
@@ -178,7 +178,7 @@ static void binary() {
   }
 }
 
-static void literal() {
+static void literal(bool canAssign) {
   switch (parser.previous.type) {
     case TOKEN_FALSE:emitByte(OP_FALSE);
       break;
@@ -190,33 +190,40 @@ static void literal() {
   }
 }
 
-static void grouping() {
+static void grouping(bool canAssign) {
   expression();
   consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
-static void number() {
+static void number(bool canAssign) {
   // 字符串转 double
   double value = strtod(parser.previous.start, NULL);
   emitConstant(NUMBER_VAL(value));
 }
 
-static void string() {
+static void string(bool canAssign) {
   emitConstant(OBJ_VAL(
                    copyString(parser.previous.start + 1, parser.previous.length - 2)));
 }
 
-static void namedVariable(Token name) {
+static void namedVariable(Token name, bool canAssign) {
   // 所有的变量名称在底层应该具有相同的地址，这样可以方便比较，和 hash 表查找
   uint8_t arg = identifierConstant(&name);
-  emitBytes(OP_GET_GLOBAL, arg);
+
+  if (canAssign && match(TOKEN_EQUAL)) {
+    // 修改变量
+    expression();
+    emitBytes(OP_SET_GLOBAL, arg);
+  } else {
+    emitBytes(OP_GET_GLOBAL, arg);
+  }
 }
 
-static void variable() {
-  namedVariable(parser.previous);
+static void variable(bool canAssign) {
+  namedVariable(parser.previous, canAssign);
 }
 
-static void unary() {
+static void unary(bool canAssign) {
   TokenType operatorType = parser.previous.type;
 
   // Compile the operand.
@@ -284,13 +291,20 @@ static void parsePrecedence(Precedence precedence) {
     error("Expect expression.");
     return;
   }
+  bool canAssign = precedence <= PREC_ASSIGNMENT;
 
-  prefixRule();  // 判断是否有前缀表达式
+  prefixRule(canAssign);  // 判断是否有前缀表达式
 
   while (precedence <= getRule(parser.current.type)->precedence) {
     advance();
     ParseFn infixRule = getRule(parser.previous.type)->infix;
-    infixRule();
+    infixRule(canAssign);
+  }
+
+  // 如果需要赋值，但是确没有赋值这是一个错误，需要报告
+  // 如 a * b = 1 + 3;
+  if (canAssign && match(TOKEN_EQUAL)) {
+    error("Invalid assignment target.");
   }
 }
 

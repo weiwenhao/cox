@@ -104,6 +104,18 @@ static InterpretResult run() {
         pop();
         break;
       }
+      case OP_SET_GLOBAL: {
+        ObjString *name = READ_STRING();
+        // 如果 table set 返回 true，表示 name 是一个新的值
+        // 则说明全局变量为定义，何谈修改一说
+        bool isNewKey = tableSet(&vm.globals, name, peek(0));
+        if (isNewKey) {
+          tableDelete(&vm.globals, name);
+          runtimeError("Undefined variable '%s'.", name->chars);
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        break;
+      }
       case OP_EQUAL: {
         Value b = pop();
         Value a = pop();
