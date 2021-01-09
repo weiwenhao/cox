@@ -35,12 +35,13 @@ static void runtimeError(const char *format, ...) {
 }
 
 static InterpretResult run() {
-#define READ_BYTE() (*vm.ip++) // 读取当前指令？
+#define READ_BYTE() (*vm.ip++) // ip 指向 chunk!  stackTop 执行 stack!!!
 // OP_CONSTANT 的下一条指定总是 constant 对应的索引
 // 因为 compiler emit 时就是这么安排的
 // 所以获取常量的值的时候，直接读取下一条指令(字节码)即可
 // 不止是常量，所有的编译字节码都遵循这个原则
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_SHORT() (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op)                      \
   do {                                                \
@@ -69,8 +70,8 @@ static InterpretResult run() {
       case OP_CONSTANT: {
         Value constant = READ_CONSTANT();
         push(constant);  // push 进去干啥？ 有啥用？
-        printValue(constant);
-        printf("\n");
+//        printValue(constant);
+//        printf("\n");
         break;
       }
       case OP_NIL:push(NIL_VAL);
@@ -81,6 +82,16 @@ static InterpretResult run() {
         break;
       case OP_POP:pop();
         break;
+      case OP_GET_LOCAL: {
+        uint8_t slot = READ_BYTE();
+        push(vm.stack[slot]);
+        break;
+      }
+      case OP_SET_LOCAL: {
+        uint8_t slot = READ_BYTE();
+        vm.stack[slot] = peek(0);
+        break;
+      }
       case OP_GET_GLOBAL: {
         ObjString *name = READ_STRING();
         Value value;
@@ -161,6 +172,16 @@ static InterpretResult run() {
         printf("\n");
         break;
       }
+      case OP_JUMP: {
+        uint16_t offset = READ_SHORT();
+        vm.ip += offset;
+        break;
+      }
+      case OP_JUMP_IF_FALSE: {
+        uint16_t offset = READ_SHORT();
+        if (isFalsey(peek(0))) vm.ip += offset;
+        break;
+      }
       case OP_RETURN: {
         // printValue(pop());
         // printf("\n");
@@ -170,6 +191,7 @@ static InterpretResult run() {
   }
 
 #undef READ_BYTE
+#undef READ_SHORT
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef BINARY_OP

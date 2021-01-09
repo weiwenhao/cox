@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "scanner.h"
 
@@ -58,6 +59,7 @@ Compiler *current = NULL;
 Chunk *compilingChunk;
 
 static uint8_t identifierConstant(Token *name);
+static int resolveLocal(Compiler *compiler, Token *name);
 
 static Chunk *currentChunk() { return compilingChunk; }
 
@@ -122,6 +124,16 @@ static void emitBytes(uint8_t byte1, uint8_t byte2) {
   emitByte(byte2);
 }
 
+// 返回需要添加补丁的chunk 部分。
+static int emitJump(uint8_t instruction) {
+  emitByte(instruction);
+  // 一个字节只能存储 8 位二进制，则最大只能偏移 255 个指令,这显然是不够的
+  // 因此使用 2 个字节，表示 65536 个偏移指令
+  emitByte(0xff);
+  emitByte(0xff);
+  return currentChunk()->count - 2;
+}
+
 static void emitReturn() { emitByte(OP_RETURN); }
 
 static uint8_t makeConstant(Value value) {
@@ -136,6 +148,23 @@ static uint8_t makeConstant(Value value) {
 
 static void emitConstant(Value value) {
   emitBytes(OP_CONSTANT, makeConstant(value));
+}
+
+static void patchJump(int offset) {
+  // - 2 to adjust for the bytecode for the jump offset itself
+  // - offset 计算出偏移量（且预留 offset 位置）
+  int jump = currentChunk()->count - offset - 2;
+
+  if (jump > UINT16_MAX) {
+    error("Too much code to jump over.");
+
+    // jump 表示当前指令的 index，即绝对位置
+    // 并将该绝对位置，存放在两个字节中
+    // 第一个字节存储前 8 位二进制
+    // 第二个字节存储后 8 位二进制
+    currentChunk()->code[offset] = (jump >> 8) & 0xff;
+    currentChunk()->code[offset + 1] = jump & 0xff;
+  }
 }
 
 static void initCompiler(Compiler *compiler) {
@@ -159,6 +188,12 @@ static void beginScope() {
 
 static void endScope() {
   current->scopeDepth--;
+
+  while (current->localCount > 0 &&
+      current->locals[current->localCount - 1].depth > current->scopeDepth) {
+    emitByte(OP_POP);
+    current->localCount--;
+  }
 }
 
 // 预先声明
@@ -235,14 +270,24 @@ static void string(bool canAssign) {
 
 static void namedVariable(Token name, bool canAssign) {
   // 所有的变量名称在底层应该具有相同的地址，这样可以方便比较，和 hash 表查找
-  uint8_t arg = identifierConstant(&name);
+  uint8_t getOp, setOp;
+  int arg = resolveLocal(current, &name);
+  if (arg != -1) {
+    getOp = OP_GET_LOCAL;
+    setOp = OP_SET_LOCAL;
+  } else {
+    // 常量化字符串
+    arg = identifierConstant(&name);
+    getOp = OP_GET_GLOBAL;
+    setOp = OP_SET_GLOBAL;
+  }
 
   if (canAssign && match(TOKEN_EQUAL)) {
     // 修改变量
-    expression();
-    emitBytes(OP_SET_GLOBAL, arg);
+    expression(); // 写入计算结果在栈中
+    emitBytes(setOp, arg);
   } else {
-    emitBytes(OP_GET_GLOBAL, arg);
+    emitBytes(getOp, arg);
   }
 }
 
@@ -339,6 +384,29 @@ static uint8_t identifierConstant(Token *name) {
   return makeConstant(OBJ_VAL(copyString(name->start, name->length)));
 }
 
+static bool identifiersEqual(Token *a, Token *b) {
+  if (a->length != b->length) return false;
+  return memcmp(a->start, b->start, a->length) == 0;
+}
+
+// 返回的 i 是变量在 locals 中的索引，有什么意义吗？
+// 编译完成后 locals 还一直存在？？？？
+// 疑问： i 和 vm.stack 对应吗？？？？
+// vm.stack 中不是还有其他指令，比如 POP 等占用吗？
+static int resolveLocal(Compiler *compiler, Token *name) {
+  for (int i = compiler->localCount - 1; i >= 0; i--) {
+    Local *local = &compiler->locals[i];
+    if (identifiersEqual(name, &local->name)) {
+      if (local->depth == -1) {
+        error("Can't read local variable in its own initializer.");
+      }
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 static void addLocal(Token name) {
   if (current->localCount == UINT8_COUNT) {
     error("Too many local variables in function.");
@@ -347,7 +415,7 @@ static void addLocal(Token name) {
 
   Local *local = &current->locals[current->localCount++];
   local->name = name;
-  local->depth = current->scopeDepth;
+  local->depth = -1; // 声明但未初始化的特殊标志
 }
 
 static void declareVariable() {
@@ -378,10 +446,16 @@ static uint8_t parseVariable(const char *errorMessage) {
   return identifierConstant(&parser.previous);
 }
 
-// 定义全局变量(未赋值)
+static void markInitialized() {
+  current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
+// 定义全局变量
 static void defineVariable(uint8_t global) {
   if (current->scopeDepth > 0) {
     // 虽然你不敢相信，但是局部变量现在已经创建好了，其已经放在了栈顶！！！
+    // 表达式是从右往左计算并编译的
+    markInitialized();
     return;
   }
 
@@ -391,6 +465,27 @@ static void defineVariable(uint8_t global) {
 static ParseRule *getRule(TokenType type) { return &rules[type]; }
 
 static void expression() { parsePrecedence(PREC_ASSIGNMENT); }
+
+static void ifStatement() {
+  consume(TOKEN_LEFT_PAREN, "Expect '(' after 'if'.");
+  expression(); // 表达式会产生一个值，该值会写入到栈顶
+  consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+
+  // 计算当 if 表达式为 false 时，IP 需要指向的指令序列。
+  int thenJump = emitJump(OP_JUMP_IF_FALSE);
+  // 如果进入到该条件，则弹出 expresion 写入的栈值
+  // 如果么有进入，则需要交给后面的 jump 后弹出
+  emitByte(OP_POP);
+  statement(); // 编译 if 表达式的 body 部分。
+
+  int elseJump = emitJump(OP_JUMP);
+
+  patchJump(thenJump);
+  emitJump(OP_POP);
+
+  if (match(TOKEN_ELSE)) statement();
+  patchJump(elseJump);
+}
 
 static void block() {
   while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
@@ -418,6 +513,8 @@ static void varDeclaration() {
 static void expressionStatement() {
   expression();
   consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
+  // 关键关键关键！
+  // 非表达式直接弹出!!! 防止堆在栈里面
   emitByte(OP_POP);
 }
 
@@ -465,6 +562,8 @@ static void declaration() {
 static void statement() {
   if (match(TOKEN_PRINT)) {
     printStatement();
+  } else if (match(TOKEN_IF)) {
+    ifStatement();
   } else if (match(TOKEN_LEFT_BRACE)) {
     beginScope();
     block();
