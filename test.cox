@@ -1,5 +1,9 @@
-fun test() {
- print "php 是世界上最好的语言";
+var x = "global";
+fun outer() {
+  var x = "outer";
+  fun inner() {
+    print x;
+  }
+  inner();
 }
-
-test();
+outer();
