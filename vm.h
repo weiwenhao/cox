@@ -12,7 +12,7 @@
 typedef struct {
   ObjFunction *function;
   uint8_t *ip;
-  Value *slots;
+  Value *slots; // 相当于函数内部栈指针！！！ 也就是 c 语言的 EBP 寄存器 !!!
 } CallFrame;
 
 typedef struct {
@@ -41,5 +41,6 @@ void freeVM();
 InterpretResult interpret(const char *source);
 void push(Value value);
 Value pop();
+static bool callValue(Value callee, int argCount);
 
 #endif  // COX__VM_H_

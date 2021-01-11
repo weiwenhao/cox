@@ -1,5 +1,6 @@
 #include "vm.h"
 
+#include <time.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +12,10 @@
 #include "object.h"
 
 VM vm;  // 全局变量，用于数据共享
+
+static Value clockNative(int argCount, Value *args) {
+  return NUMBER_VAL((double) clock() / CLOCKS_PER_SEC);
+}
 
 static Value peek(int distance);
 static bool isFalsey(Value value);
@@ -28,12 +33,30 @@ static void runtimeError(const char *format, ...) {
   va_end(args);
   fputs("\n", stderr);
 
-  CallFrame *frame = &vm.frames[vm.frameCount - 1];
-  size_t instruction = frame->ip - frame->function->chunk.code - 1;
-  int line = frame->function->chunk.lines[instruction];
-  fprintf(stderr, "[line %d] in script\n", line);
-
+  for (int i = vm.frameCount - 1; i >= 0; i--) {
+    CallFrame *frame = &vm.frames[i];
+    ObjFunction *function = frame->function;
+    // -1 because the IP is sitting on the next instruction to be
+    // executed.
+    size_t instruction = frame->ip - function->chunk.code - 1;
+    fprintf(stderr, "[line %d] in ",
+            function->chunk.lines[instruction]);
+    if (function->name == NULL) {
+      fprintf(stderr, "script\n");
+    } else {
+      fprintf(stderr, "%s()\n", function->name->chars);
+    }
+  }
   resetStack();
+}
+
+static void defineNative(const char *name, NativeFn function) {
+  // 避免被垃圾收集释放？？
+  push(OBJ_VAL(copyString(name, (int) strlen(name))));
+  push(OBJ_VAL(newNative(function)));
+  tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+  pop();
+  pop();
 }
 
 static InterpretResult run() {
@@ -93,6 +116,7 @@ static InterpretResult run() {
         break;
       case OP_GET_LOCAL: {
         uint8_t slot = READ_BYTE();
+        // 这里 tm 是指针偏移操作， 由于使用同一个 stack， 所以一切都可以实现！
         push(frame->slots[slot]);
         break;
       }
@@ -196,10 +220,30 @@ static InterpretResult run() {
         frame->ip -= offset;
         break;
       }
+      case OP_CALL: {
+        int argCount = READ_BYTE(); // 从指令中获取参数数量
+        if (!callValue(peek(argCount), argCount)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        frame = &vm.frames[vm.frameCount - 1];
+        break;
+      }
       case OP_RETURN: {
-        // printValue(pop());
-        // printf("\n");
-        return INTERPRET_OK;
+        Value result = pop(); // 弹出 返回值
+        vm.frameCount--;
+        if (vm.frameCount == 0) {
+          pop(); //  弹出 script function point
+          return INTERPRET_OK; // 退出 run 函数
+        }
+
+        // 这里相当于丢弃了 slots 右边的所有临时变量
+        vm.stackTop = frame->slots;
+        // 然后将函数返回值重新丢进堆栈中
+        push(result);
+
+        frame = &vm.frames[vm.frameCount - 1];
+        // 中断后续 switch 判断，进入下一次 for 指令循环
+        break;
       }
     }
   }
@@ -216,6 +260,8 @@ void initVM() {
   vm.objects = NULL;
   initTable(&vm.globals);
   initTable(&vm.strings);
+
+  defineNative("clock", clockNative);
 }
 
 void freeVM() {
@@ -244,6 +290,45 @@ static Value peek(int distance) {
   return value;
 }
 
+static bool call(ObjFunction *function, int argCount) {
+  // 参数数量不匹配检测
+  if (argCount != function->arity) {
+    runtimeError("Expected %d arguments bug got %d.", function->arity, argCount);
+    return false;
+  }
+
+  if (vm.frameCount == FRAMES_MAX) {
+    runtimeError("Stack overflow.");
+    return false;
+  }
+
+  CallFrame *frame = &vm.frames[vm.frameCount++];
+  frame->function = function;
+  frame->ip = function->chunk.code;
+  frame->slots = vm.stackTop - argCount - 1;
+
+  return true;
+}
+
+static bool callValue(Value callee, int argCount) {
+  if (IS_OBJ(callee)) {
+    switch (OBJ_TYPE(callee)) {
+      case OBJ_FUNCTION:return call(AS_FUNCTION(callee), argCount);
+      case OBJ_NATIVE: {
+        NativeFn native = AS_NATIVE(callee);
+        Value result = native(argCount, vm.stackTop - argCount);
+        vm.stackTop -= argCount + 1; // 手动丢弃临时变量参数列表
+        push(result); // 保存函数返回结果
+        return true;
+      }
+      default:break;
+    }
+  }
+
+  runtimeError("Can only call function and classes.");
+  return false;
+}
+
 // 只有 nil 和 false 为 false,其余值都为 true
 static bool isFalsey(Value value) {
   return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
@@ -268,10 +353,9 @@ InterpretResult interpret(const char *source) {
   if (function == NULL) return INTERPRET_COMPILE_ERROR;
 
   push(OBJ_VAL(function));
-  CallFrame *frame = &vm.frames[vm.frameCount++];
-  frame->function = function;
-  frame->ip = function->chunk.code;
-  frame->slots = vm.stack;
+
+  // 执行 top function
+  callValue(OBJ_VAL(function), 0);
 
   return run();
 }
