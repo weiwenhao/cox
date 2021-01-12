@@ -23,6 +23,7 @@ typedef enum {
   OBJ_FUNCTION,
   OBJ_NATIVE,
   OBJ_STRING,
+  OBJ_UPVALUE,
 } ObjType;
 
 struct Obj {
@@ -33,6 +34,7 @@ struct Obj {
 typedef struct {
   Obj obj;
   int arity;
+  int upvalueCount; // 捕捉到的外部变量
   Chunk chunk;
   ObjString *name;
 } ObjFunction;
@@ -50,9 +52,16 @@ struct ObjString {
   uint32_t hash;
 };
 
+typedef struct ObjUpvalue {
+  Obj obj;
+  Value *location; // 值引用
+} ObjUpvalue;
+
 typedef struct {
   Obj obj; // captured variables to here
   ObjFunction *function; // 引用，不拥有
+  ObjUpvalue **upvalues;
+  int upvalueCount; // 冗余，为了 GC
 } ObjClosure;
 
 ObjClosure *newClosure(ObjFunction *function);
@@ -60,7 +69,7 @@ ObjFunction *newFunction();
 ObjNative *newNative(NativeFn function);
 ObjString *takeString(char *chars, int length);
 ObjString *copyString(const char *chars, int length);
-
+ObjUpvalue *newUpvalue(Value *slot);
 void printObject(Value value);
 
 static inline bool isObjType(Value value, ObjType type) {

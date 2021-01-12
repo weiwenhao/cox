@@ -10,7 +10,7 @@
 #define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 
 typedef struct {
-  ObjFunction *function;
+  ObjClosure *closure; // TODO 何解？？？
   uint8_t *ip;
   Value *slots; // 相当于函数内部栈指针！！！ 也就是 c 语言的 EBP 寄存器 !!!
 } CallFrame;
@@ -42,5 +42,6 @@ InterpretResult interpret(const char *source);
 void push(Value value);
 Value pop();
 static bool callValue(Value callee, int argCount);
+static ObjUpvalue *captureUpvalue(Value *local);
 
 #endif  // COX__VM_H_

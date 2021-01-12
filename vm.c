@@ -35,7 +35,7 @@ static void runtimeError(const char *format, ...) {
 
   for (int i = vm.frameCount - 1; i >= 0; i--) {
     CallFrame *frame = &vm.frames[i];
-    ObjFunction *function = frame->function;
+    ObjFunction *function = frame->closure->function;
     // -1 because the IP is sitting on the next instruction to be
     // executed.
     size_t instruction = frame->ip - function->chunk.code - 1;
@@ -71,7 +71,7 @@ static InterpretResult run() {
 // 所以获取常量的值的时候，直接读取下一条指令(字节码)即可
 // 不止是常量，所有的编译字节码都遵循这个原则
 #define READ_CONSTANT() \
-    (frame->function->chunk.constants.values[READ_BYTE()])
+    (frame->closure->function->chunk.constants.values[READ_BYTE()])
 
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op)                      \
@@ -94,8 +94,8 @@ static InterpretResult run() {
       printf(" ]");
     }
     printf("\n");
-    disassembleInstruction(&frame->function->chunk,
-                           (int) (frame->ip - frame->function->chunk.code));
+    disassembleInstruction(&frame->closure->function->chunk,
+                           (int) (frame->ip - frame->closure->function->chunk.code));
 #endif
     uint8_t instruction;
     switch (instruction = READ_BYTE()) {
@@ -158,6 +158,16 @@ static InterpretResult run() {
           runtimeError("Undefined variable '%s'.", name->chars);
           return INTERPRET_RUNTIME_ERROR;
         }
+        break;
+      }
+      case OP_GET_UPVALUE: {
+        uint8_t slot = READ_BYTE();
+        push(*frame->closure->upvalues[slot]->location);
+        break;
+      }
+      case OP_SET_UPVALUE: {
+        uint8_t slot = READ_BYTE();
+        *frame->closure->upvalues[slot]->location = peek(0);
         break;
       }
       case OP_EQUAL: {
@@ -228,6 +238,23 @@ static InterpretResult run() {
         frame = &vm.frames[vm.frameCount - 1];
         break;
       }
+      case OP_CLOSURE: {
+        ObjFunction *function = AS_FUNCTION(READ_CONSTANT());
+        ObjClosure *closure = newClosure(function); // ?? 运行时操作？?
+        push(OBJ_VAL(closure));
+
+        for (int i = 0; i < closure->upvalueCount; i++) {
+          uint8_t isLocal = READ_BYTE();
+          uint8_t index = READ_BYTE(); // 这里存储的是？
+          if (isLocal) {
+            closure->upvalues[i] = captureUpvalue(frame->slots + index);
+          } else {
+            closure->upvalues[i] = frame->closure->upvalues[index];
+          }
+        }
+
+        break;
+      }
       case OP_RETURN: {
         Value result = pop(); // 弹出 返回值
         vm.frameCount--;
@@ -290,10 +317,11 @@ static Value peek(int distance) {
   return value;
 }
 
-static bool call(ObjFunction *function, int argCount) {
+// TODO
+static bool call(ObjClosure *closure, int argCount) {
   // 参数数量不匹配检测
-  if (argCount != function->arity) {
-    runtimeError("Expected %d arguments bug got %d.", function->arity, argCount);
+  if (argCount != closure->function->arity) {
+    runtimeError("Expected %d arguments bug got %d.", closure->function->arity, argCount);
     return false;
   }
 
@@ -302,18 +330,20 @@ static bool call(ObjFunction *function, int argCount) {
     return false;
   }
 
+  // 向下一层，并在当前层保存下一层的 closure
   CallFrame *frame = &vm.frames[vm.frameCount++];
-  frame->function = function;
-  frame->ip = function->chunk.code;
+  frame->closure = closure;
+  frame->ip = closure->function->chunk.code;
   frame->slots = vm.stackTop - argCount - 1;
 
   return true;
 }
 
+// ???
 static bool callValue(Value callee, int argCount) {
   if (IS_OBJ(callee)) {
     switch (OBJ_TYPE(callee)) {
-      case OBJ_FUNCTION:return call(AS_FUNCTION(callee), argCount);
+      case OBJ_CLOSURE:return call(AS_CLOSURE(callee), argCount);
       case OBJ_NATIVE: {
         NativeFn native = AS_NATIVE(callee);
         Value result = native(argCount, vm.stackTop - argCount);
@@ -327,6 +357,11 @@ static bool callValue(Value callee, int argCount) {
 
   runtimeError("Can only call function and classes.");
   return false;
+}
+
+static ObjUpvalue *captureUpvalue(Value *local) {
+  ObjUpvalue *createdUpvalue = newUpvalue(local);
+  return createdUpvalue;
 }
 
 // 只有 nil 和 false 为 false,其余值都为 true
@@ -355,7 +390,10 @@ InterpretResult interpret(const char *source) {
   push(OBJ_VAL(function));
 
   // 执行 top function
-  callValue(OBJ_VAL(function), 0);
+  ObjClosure *closure = newClosure(function);
+  pop();
+  push(OBJ_VAL(closure));
+  callValue(OBJ_VAL(closure), 0);
 
   return run();
 }

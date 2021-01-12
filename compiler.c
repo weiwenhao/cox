@@ -46,6 +46,11 @@ typedef struct {
   int depth; // 变量所处的 scope 深度，和 scopeDepth 是一个概念！！！
 } Local;
 
+typedef struct {
+  uint8_t index;
+  bool isLocal;
+} Upvalue;
+
 typedef enum {
   TYPE_FUNCTION,
   TYPE_SCRIPT,
@@ -56,8 +61,12 @@ typedef struct Compiler {
   ObjFunction *function;
   FunctionType type;
   Local locals[UINT8_COUNT];
+  // 捕捉到的函数（compiler）的外部变量, 下一层 compiler 可以使用本层 upvalues
+  Upvalue upvalues[UINT8_COUNT];
+
   int localCount; // 变量数量
   int scopeDepth; // 深度
+
 } Compiler;
 
 Parser parser;
@@ -68,6 +77,7 @@ Chunk *compilingChunk;
 
 static uint8_t identifierConstant(Token *name);
 static int resolveLocal(Compiler *compiler, Token *name);
+static int resolveUpvalue(Compiler *compiler, Token *name);
 
 static Chunk *currentChunk() {
   return &current->function->chunk;
@@ -189,6 +199,7 @@ static void patchJump(int offset) {
   currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
+// 当调用 call function 时，会保存当前调用栈，并进入下一级调用栈。
 static void initCompiler(Compiler *compiler, FunctionType type) {
   compiler->enclosing = current;
   compiler->function = NULL;
@@ -218,7 +229,7 @@ static ObjFunction *endCompiler() {
   }
 #endif
 
-  current = current->enclosing;
+  current = current->enclosing; // 返回上一个调用栈
   return function;
 }
 
@@ -332,6 +343,9 @@ static void namedVariable(Token name, bool canAssign) {
   if (arg != -1) {
     getOp = OP_GET_LOCAL;
     setOp = OP_SET_LOCAL;
+  } else if ((arg = resolveUpvalue(current, &name)) != -1) {
+    getOp = OP_GET_UPVALUE;
+    setOp = OP_SET_UPVALUE;
   } else {
     // 常量化字符串
     arg = identifierConstant(&name);
@@ -446,6 +460,8 @@ static bool identifiersEqual(Token *a, Token *b) {
   return memcmp(a->start, b->start, a->length) == 0;
 }
 
+// resolver 能走多远？
+// TODO 只局限在当前作用域中吗？？
 // 返回的 i 是变量在 locals 中的索引，有什么意义吗？
 // 编译完成后 locals 还一直存在？？？？
 // 疑问： i 和 vm.stack 对应吗？？？？
@@ -459,6 +475,48 @@ static int resolveLocal(Compiler *compiler, Token *name) {
       }
       return i;
     }
+  }
+
+  return -1;
+}
+
+static int addUpvalue(Compiler *compiler, uint8_t index, bool isLocal) {
+  // 记录该环境的 upvalue 的次数
+  int upvalueCount = compiler->function->upvalueCount;
+
+  // 检测 upvalue 是否已经存在
+  for (int i = 0; i < upvalueCount; ++i) {
+    Upvalue *upvalue = &compiler->upvalues[i];
+    if (upvalue->index == index && upvalue->isLocal == isLocal) {
+      return i;
+    }
+  }
+
+  if (upvalueCount == UINT8_COUNT) {
+    error("Too many closure variables in function.");
+    return 0;
+  }
+
+  compiler->upvalues[upvalueCount].isLocal = isLocal;
+  compiler->upvalues[upvalueCount].index = index;
+  return compiler->function->upvalueCount++;
+}
+
+static int resolveUpvalue(Compiler *compiler, Token *name) {
+  if (compiler->enclosing == NULL) return -1;
+
+  // 从上一层的 local 捕获变量
+  int local = resolveLocal(compiler->enclosing, name);
+  if (local != -1) {
+    return addUpvalue(compiler, (uint8_t) local, true);
+  }
+
+  // 如果上一层没有直接找到需要捕获的变量，则递归到上一层，重复进行
+  // 直到找到需要的变量捕获，或者用尽编译器
+  // 如果找到，则这里的返回值是上一层 upvalue 的 index
+  int upvalue = resolveUpvalue(compiler->enclosing, name);
+  if (upvalue != -1) {
+    return addUpvalue(compiler, (uint8_t) upvalue, false);
   }
 
   return -1;
@@ -571,6 +629,7 @@ static void block() {
   consume(TOKEN_RIGHT_BRACE, "Expect '}' after block.");
 }
 
+// declaration function
 static void function(FunctionType type) {
   Compiler compiler;
   initCompiler(&compiler, type);
@@ -598,6 +657,11 @@ static void function(FunctionType type) {
   ObjFunction *function = endCompiler();
   // 使用常量表保存函数
   emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+
+  for (int i = 0; i < function->upvalueCount; i++) {
+    emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+    emitByte(compiler.upvalues[i].index);
+  }
 }
 
 static void funDeclaration() {
