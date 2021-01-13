@@ -25,6 +25,8 @@ typedef struct {
   Value *stackTop; // 支持，恒定指向栈顶
   Table globals;
   Table strings;  // 存储所有的字符串表
+  ObjUpvalue *openUpvalues;
+
   Obj *objects;   // 垃圾回收的起点
 } VM;
 

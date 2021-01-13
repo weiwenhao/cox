@@ -55,6 +55,8 @@ struct ObjString {
 typedef struct ObjUpvalue {
   Obj obj;
   Value *location; // 值引用
+  Value closed; // stack 中的局部变量关闭前，将其复制过来,防止丢失！！!
+  struct ObjUpvalue *next; // upvalue 链表,防止多个函数引用一个升值时重复引用。
 } ObjUpvalue;
 
 typedef struct {

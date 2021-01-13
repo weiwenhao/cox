@@ -44,6 +44,7 @@ typedef struct {
 typedef struct {
   Token name;
   int depth; // 变量所处的 scope 深度，和 scopeDepth 是一个概念！！！
+  bool isCaptured;
 } Local;
 
 typedef struct {
@@ -215,7 +216,8 @@ static void initCompiler(Compiler *compiler, FunctionType type) {
 
   Local *local = &current->locals[current->localCount++];
   local->depth = 0;
-  local->name.start = "";
+  local->isCaptured = false;
+  local->name.start = ""; // 头号变量
   local->name.length = 0;
 }
 
@@ -242,7 +244,12 @@ static void endScope() {
 
   while (current->localCount > 0 &&
       current->locals[current->localCount - 1].depth > current->scopeDepth) {
-    emitByte(OP_POP);
+    if (current->locals[current->localCount - 1].isCaptured) {
+      emitByte(OP_CLOSE_UPVALUE);
+    } else {
+      emitByte(OP_POP);
+    }
+
     current->localCount--;
   }
 }
@@ -508,6 +515,7 @@ static int resolveUpvalue(Compiler *compiler, Token *name) {
   // 从上一层的 local 捕获变量
   int local = resolveLocal(compiler->enclosing, name);
   if (local != -1) {
+    compiler->enclosing->locals[local].isCaptured = true;
     return addUpvalue(compiler, (uint8_t) local, true);
   }
 
@@ -531,6 +539,7 @@ static void addLocal(Token name) {
   Local *local = &current->locals[current->localCount++];
   local->name = name;
   local->depth = -1; // 声明但未初始化的特殊标志
+  local->isCaptured = false;
 }
 
 static void declareVariable() {

@@ -19,11 +19,13 @@ static Value clockNative(int argCount, Value *args) {
 
 static Value peek(int distance);
 static bool isFalsey(Value value);
+static void closeUpvalues(Value *last);
 static void concatenate();
 
 static void resetStack() {
   vm.stackTop = vm.stack;  // 变量名是一个指针，指向数组的开始位置
   vm.frameCount = 0;
+  vm.openUpvalues = NULL;
 }
 
 static void runtimeError(const char *format, ...) {
@@ -255,8 +257,14 @@ static InterpretResult run() {
 
         break;
       }
+      case OP_CLOSE_UPVALUE:closeUpvalues(vm.stackTop - 1);
+        pop();
+        break;
       case OP_RETURN: {
         Value result = pop(); // 弹出 返回值
+
+        closeUpvalues(frame->slots); // up value in heap
+
         vm.frameCount--;
         if (vm.frameCount == 0) {
           pop(); //  弹出 script function point
@@ -359,9 +367,44 @@ static bool callValue(Value callee, int argCount) {
   return false;
 }
 
+// 如果两个闭包捕获同一个变量，则他们拥有相同的 upvalue
 static ObjUpvalue *captureUpvalue(Value *local) {
+  ObjUpvalue *prevUpvalue = NULL;
+  ObjUpvalue *upvalue = vm.openUpvalues;
+
+  while (upvalue != NULL && upvalue->location > local) {
+    prevUpvalue = upvalue;
+    upvalue = upvalue->next;
+  }
+
+  if (upvalue != NULL && upvalue->location == local) {
+    return upvalue;
+  }
+
   ObjUpvalue *createdUpvalue = newUpvalue(local);
+  createdUpvalue->next = upvalue;
+
+  // 连表插入
+  if (prevUpvalue == NULL) {
+    vm.openUpvalues = createdUpvalue;
+  } else {
+    prevUpvalue->next = createdUpvalue;
+  }
+
   return createdUpvalue;
+}
+
+static void closeUpvalues(Value *last) {
+  // 为什么关闭一个变量要捕获多个值？？？？？？
+  // 难道不是只有一个吗
+  while (vm.openUpvalues != NULL && vm.openUpvalues->location >= last) {
+    ObjUpvalue *upvalue = vm.openUpvalues;
+    // 获取 location 指向的值存入到 closed
+    // 并将 location 从新指向自身，从而封闭整个 upvalue
+    upvalue->closed = *upvalue->location;
+    upvalue->location = &upvalue->closed;
+    vm.openUpvalues = upvalue->next;
+  }
 }
 
 // 只有 nil 和 false 为 false,其余值都为 true

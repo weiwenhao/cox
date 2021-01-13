@@ -1,9 +1,16 @@
-function outer() {
-  var x = "before";
-  function inner() {
-    x = "assigned";
-  }
-  inner();
-  console.log(x);
+var globalSet;
+var globalGet;
+
+function main() {
+  var a = "initial";
+
+  function set() { a = "updated"; }
+  function get() { console.log(a); }
+
+  globalSet = set;
+  globalGet = get;
 }
-outer();
+
+main();
+globalSet();
+globalGet();
