@@ -97,17 +97,16 @@ static void skipWhitespace() {
   }
 }
 
-static TokenType checkKeyword(int start, int length, const char* rest, TokenType type) {
+static TokenType checkKeyword(int start, int length, const char *rest, TokenType type) {
   if (scanner.current - scanner.start == start + length &&
-    memcmp(scanner.start + start, rest, length) == 0) {
+      memcmp(scanner.start + start, rest, length) == 0) {
     return type;
   }
 
   return TOKEN_IDENTIFIER;
 }
 
-static TokenType identifierType()
-{
+static TokenType identifierType() {
   // 关键字识别
   switch (scanner.start[0]) { // 从头开始判断 identifier 是否是reserved word
     case 'a': return checkKeyword(1, 2, "nd", TOKEN_AND);
@@ -118,7 +117,7 @@ static TokenType identifierType()
         switch (scanner.start[1]) {
           case 'a': return checkKeyword(2, 3, "lse", TOKEN_FALSE);
           case 'o': return checkKeyword(2, 1, "r", TOKEN_FOR);
-          case 'u': return checkKeyword(2, 1, "n", TOKEN_FUN);
+          case 'u': return checkKeyword(2, 6, "nction", TOKEN_FUN);
         }
       }
     case 'i': return checkKeyword(1, 1, "f", TOKEN_IF);

@@ -1,0 +1,20 @@
+function foo() {
+  function bar() {
+	print "i am bar";
+  }
+
+  print "i am foo";
+}
+
+function rule() {
+  foo();
+  function party() {
+	  print "i am party";
+  }
+
+  function circle() {
+	  print "i am circle";
+  }
+  print "i am rule";
+}
+

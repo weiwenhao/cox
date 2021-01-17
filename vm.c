@@ -241,14 +241,16 @@ static InterpretResult run() {
         break;
       }
       case OP_CLOSURE: {
+        // 编译 OP_CLOSURE 顺便解析一下 upvalue 在栈中的绝对位置
         ObjFunction *function = AS_FUNCTION(READ_CONSTANT());
         ObjClosure *closure = newClosure(function); // ?? 运行时操作？?
         push(OBJ_VAL(closure));
 
         for (int i = 0; i < closure->upvalueCount; i++) {
           uint8_t isLocal = READ_BYTE();
-          uint8_t index = READ_BYTE(); // 这里存储的是？
+          uint8_t index = READ_BYTE(); // 这里存储的是相对位置
           if (isLocal) {
+            // 计算绝对位置
             closure->upvalues[i] = captureUpvalue(frame->slots + index);
           } else {
             closure->upvalues[i] = frame->closure->upvalues[index];
@@ -265,6 +267,8 @@ static InterpretResult run() {
 
         closeUpvalues(frame->slots); // up value in heap
 
+        // 打消 init 时的 vm.frameCount++,使 frameCount 指向当前调用栈
+        // 下面的 vm.frameCount -1 则是返回到上一个调用栈。
         vm.frameCount--;
         if (vm.frameCount == 0) {
           pop(); //  弹出 script function point
@@ -436,6 +440,7 @@ InterpretResult interpret(const char *source) {
   ObjClosure *closure = newClosure(function);
   pop();
   push(OBJ_VAL(closure));
+  // 函数调用
   callValue(OBJ_VAL(closure), 0);
 
   return run();

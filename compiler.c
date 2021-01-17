@@ -200,7 +200,7 @@ static void patchJump(int offset) {
   currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
-// 当调用 call function 时，会保存当前调用栈，并进入下一级调用栈。
+// 当编译到一个新的 function 时，会保存当前调用栈，并进入下一级调用栈。
 static void initCompiler(Compiler *compiler, FunctionType type) {
   compiler->enclosing = current;
   compiler->function = NULL;
@@ -546,9 +546,10 @@ static void declareVariable() {
   if (current->scopeDepth == 0) return;
 
   Token *name = &parser.previous;
-  // current 无法采集到的上一级 compiler ????
+
+  // 判断变量是否在当前 function 内被声明过，如果已经声明则不能重复声明
+  // 在 function 外部被声明过则是可以允许的。
   for (int i = current->localCount - 1; i >= 0; i--) {
-    // locals 包含所有的作用域！！
     Local *local = &current->locals[i];
     if (local->depth != -1 && local->depth < current->scopeDepth) {
       break;
@@ -578,8 +579,11 @@ static void markInitialized() {
 
 static void defineVariable(uint8_t global) {
   if (current->scopeDepth > 0) {
-    // 虽然你不敢相信，但是局部变量现在已经创建好了，其已经放在了栈顶！！！
+    // 虽然你不敢相信，但是局部变量现在已经创建好了，且在执行阶段其会被优先吸入到栈顶。
     // 表达式是从右往左计算并编译的
+    // 但是更神奇的是局部变量并不需要通过类似名称的东西来定位。
+    // 我们在任意时刻都能知道该变量是否在栈中，且知道其在栈中的位置。
+    // 当需要修改或者使用局部变量时，只需要使用类似 vm.stack[slot] 或 vm.stack[slot] = xxx 即可
     markInitialized();
     return;
   }
@@ -689,6 +693,7 @@ static void varDeclaration() {
   // 然后使用常量表的 index 索引来定义全局变量
   uint8_t global = parseVariable("Expect variable name.");
 
+  // 先解析右值
   if (match(TOKEN_EQUAL)) {
     expression();
   } else {

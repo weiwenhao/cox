@@ -1,0 +1,12 @@
+function make() {
+	var apple = "i am apple";
+	var banana = "i am banana";
+	function closure() {
+		print apple;
+	}
+
+	return closure;
+}
+
+var apple = make();
+apple();
