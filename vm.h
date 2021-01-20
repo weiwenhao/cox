@@ -27,7 +27,11 @@ typedef struct {
   Table strings;  // 存储所有的字符串表
   ObjUpvalue *openUpvalues;
 
-  Obj *objects;   // 垃圾回收的起点
+  Obj *objects;
+  int grayCount; // 实际数量
+  int grayCapacity; // 栈的总容量空间
+  Obj **grayStack; // 灰色节点缓存
+
 } VM;
 
 typedef enum {

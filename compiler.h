@@ -6,5 +6,6 @@
 
 ObjFunction *compile(const char *source);
 static uint8_t argumentList();
+void markCompilerRoots();
 
 #endif //COX__COMPILER_H_

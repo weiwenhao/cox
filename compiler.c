@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "scanner.h"
+#include "memory.h"
 
 #ifdef DEBUG_PRINT_CODE
 
@@ -872,4 +873,13 @@ ObjFunction *compile(const char *source) {
 
   ObjFunction *function = endCompiler();
   return parser.hadError ? NULL : function;
+}
+
+// 编译和运行阶段只要是在 heap 中就需要被 mark,否则被清理掉就麻烦了
+void markCompilerRoots() {
+  Compiler *compiler = current;
+  while (compiler != NULL) {
+    markObject((Obj*)compiler->function);
+    compiler = compiler->enclosing;
+  }
 }

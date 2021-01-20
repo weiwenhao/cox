@@ -297,6 +297,12 @@ static InterpretResult run() {
 void initVM() {
   resetStack();
   vm.objects = NULL;
+
+  vm.grayCount = 0;
+  vm.grayCapacity = 0;
+  // 没有黑色 obj 的直接编码，如果一个 obj 的 isMark = true 并且不在 grayStack,那么其就是黑色的
+  vm.grayStack = NULL;
+
   initTable(&vm.globals);
   initTable(&vm.strings);
 
