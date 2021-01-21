@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "scanner.h"
 #include "memory.h"
 #include "table.h"
 #include "value.h"
@@ -59,8 +60,13 @@ static ObjString *allocateString(char *chars, int length, uint32_t hash) {
   string->chars = chars;
   string->hash = hash;
 
+  // 当前 string 还在初始化阶段未被 root 引用
+  // 下面的 tableSet 会触发垃圾回收，所以需要标记当前 string 防止初始化阶段被回收
+  push(OBJ_VAL(string));
   // string 为 key, value 为 nil
   tableSet(&vm.strings, string, NIL_VAL);
+
+  pop();
 
   return string;
 }

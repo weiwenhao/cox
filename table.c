@@ -169,3 +169,18 @@ void markTable(Table *table) {
     markValue(entry->value);
   }
 }
+
+// 由于 table entries hash 表"单独"指向了 object string (为了实现 intern string 功能)
+//  但是如果该 obj string 没有被任何其他 root 引用，那么它将被清除
+// 此时 entry->key->obj 将是一个悬空指针
+// 因此需要在 obj string 被清除之前，将其从 hash 表引用中删除，避免悬空指针。
+void tableRemoveWhite(Table *table) {
+  for (int i = 0; i < table->capacity; i++) {
+    // entry 是一个 hash 表。
+    Entry *entry = &table->entries[i];
+    // 没被标记？
+    if (entry->key != NULL && !entry->key->obj.isMarked) {
+      tableDelete(table, entry->key);
+    }
+  }
+}
