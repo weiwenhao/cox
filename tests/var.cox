@@ -1,5 +1,7 @@
 function foo() {
 	var a = 1;
+	return a;
 }
 
-foo();
+print foo();
+

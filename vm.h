@@ -27,6 +27,9 @@ typedef struct {
   Table strings;  // 存储所有的字符串表
   ObjUpvalue *openUpvalues;
 
+  size_t bytesAllocated;
+  size_t nextGC;
+
   Obj *objects; // 垃圾回收的起点？？
   int grayCount; // 实际数量
   int grayCapacity; // 栈的总容量空间
